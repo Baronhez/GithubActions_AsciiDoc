@@ -1,0 +1,448 @@
+:toc: macro
+toc::[]
+:idprefix:
+:idseparator: -
+:highlightjs-languages: yaml
+== Github Actions
+If there is any doubt after reading this guide, you can easily find more help link:https://powerman.name/doc/asciidoc[here].
+
+The first question we may ask is _Why do we have to learn about Github Actions?_ The answer is quite clear. It is because of its advantages!
+
+=== Advantages
+
+. Totally integrated in GitHub 
+. Community created workflows
+. Multi-platform
+. Multi-lenguage
+. Compatible with matrix functions
+. It is easy to set up a CI/CD environment using pre-defined workflows and actions already created by the community
+
+So, let's get started with the concepts behind Github Actions!
+
+== Parts of a workflow 
+
+The first thing we must learn about Github Actions is that everything occurs because of events. The meaning of this is that the timeline goes like this:
+
+_EVENTS -> WORKFLOWS -> ACTIONS_
+
+Whenever an event is triggered, the workflow enters the scene.
+
+But... What is an event to begin with?
+
+=== Events 
+
+It is anything that can trigger a workflow.
+
+.For example:
+ * Push
+ * Pull Request
+ * Schedule (using a crontab)
+ * Manually triggered
+ * Third party API
+ * Web hooks
+
+
+NOTE: We will cover this events later with practical examples.
+
+=== Workflows
+
+A workflow is a configurable automated process made up of one or more jobs. 
+
+ * Act like pipelines
+ * .yaml sintax
+ * Actions run in VMs or Containers
+ * Logs streaming & Artifacts
+ * Secret store with each repository or organization
+ * There are lots of starter workflows
+
+=== Actions
+
+Actions are nothing else than reusable units of code. They can be posted in the github marketplace and then reused by someone else.
+
+On the other hand, they can be, if desired, private for any purposes.
+
+
+==== By their nature, there are two types of actions:
+[cols="s,1,1",options="header"]
+|=======================
+||JavaScript Action      | Container Action
+|Virtual environment   | MacOS, Windows, Linux | Linux
+|Lenguage    |Any lenguage that compiles to JavaScript     |Any
+|Speed    |++     |+
+|User experience    |++|+
+|=======================
+
+=== Examples of Actions
+
+==== Example 1
+
+[source,yaml]
+----
+name: "Close stale issues"
+on: # The 'on' label marks the events that trigger the workflow
+  schedule: # Here, we can select, in a cronjob format, the time schedule for our action
+  - cron: "0 0 * * *"
+
+jobs: # Inside the 'jobs' tab, we must name and define the jobs we want to run each time the event happens
+  
+  stale: 
+    runs-on: ubuntu-latest # We must define in which environment the actions should run
+    
+    steps: # We define here which actions or commands are going to be executed
+    - uses: actions/stale@v1.1.0 
+      with: # Spefific parameters of the action
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        stale-issue-message: 'Message to comment on stale issues. If none provided, will not mark issues stale'
+        stale-pr-message: 'Message to comment on stale PRs. If none provided, will not mark PRs stale'
+----
+
+IMPORTANT: Action nomenclature: *Organization/Action@version*
+
+WARNING: Jobs are executed in parallel!
+
+==== Example 2
+
+[source,yaml]
+----
+name: Node main
+on:
+  push:
+    branches: [ main ] 
+jobs:
+  build: # Name of the first job
+    runs-on: ${{ matrix.os }} # We can pass the runner OS using the variable
+      - name: Install dependencies
+    strategy:
+      matrix: # This workflow will execute using each of this options
+        os: [ubuntu-18.04, ubuntu-latest]
+        version: [10, 12, 14]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js
+        uses: actions/setup-node@v2
+        with: 
+          node-version: ${{ matrix.version }} # We can pass the node-version parameter using the variable
+      - name: Install dependencies
+        run: npm install
+      - name: Run test
+        run: npm test
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build] # This job will execute after the execution of the 'Build' job
+    steps:
+      - uses: actions/checkout@v2
+      - uses: akhileshns/heroku-deploy@v3.12.12 
+        with:
+          heroku_api_key: ${{secrets.HEROKU_API_KEY}} # Secret variable
+          heroku_app_name: "hello_world"
+          heroku_email: "hello_world@gmail.com"
+----
+IMPORTANT: if we use a matrix, then we must refer to the specific variable.
+
+NOTE: If we need some of the jobs to execute after some other job, we can specify using the label *_needs_*.
+
+.GitHub Secrets
+****
+*Nomenclature:* secrets.<NAME>
+
+.They can be:
+
+. Organization secrets
+.. Allows secret management at organization level without duplication
+.. Effectively become repository secrets
+.. Can be scoped to specific repositories
+.. Not available with the free plan
+. Repository secrets
+.. Scoped to a repository
+.. Can be used to override Organization secrets
+.. Available on free plan
+. Environment Secrets
+.. Apply to a specific enviironment
+.. Override Organization/Repository secrets
+.. Only users with environment permission can add/edit
+
+Organization Secrets > Repository Secrets > Environment Secrets
+
+.Limitations
+. Cannot be read in apps
+.. Actions API does not provide a resource to the encrypted value
+. By default, secrets are not passed to workflows triggered by forked repos. For private repos, you can enable these.
+. Workflow can have up to 100 secrets.
+. Secrets are limited to 64K
+.. Use `gpg` to encrypt larger secrets on the repository
+
+
+****
+
+==== Example 3
+
+IMPORTANT: We should avoid monolithic actions and use chainable actions. It is easier to debug problems this way.
+
+[source,yaml]
+----
+name: Chainable workflow example
+on: 
+  push:
+    tags:
+      - '*/*.*.*'
+build:
+  runs-on: ubuntu-latest 
+  steps:
+    - name: Checkout # Step one
+      uses: actions/checkout@v2
+
+    - name: Login to DockerHub # Step two
+      uses: docker/login-action@v1
+      if: startsWith( github.ref, 'refs/tags/')
+      with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push # Step three
+      id: docker_build
+      uses: docker/build-push-action@v2
+      if: startsWith( github.ref, 'refs/tags/')
+      with: 
+          push: true
+          context: ./${{ steps.parsed_tag.outputs.image }}
+          file: ./${{ steps.parsed_tag.outputs.image }}/Dockerfile
+          tags: myregistry.com/myorg/${{ steps.parsed_tag.outputs.image }}:${{ steps.parsed_tag.outputs.version }}
+
+
+----
+
+==== Example 4 (Use of a linter)
+
+NOTE: We may use this super-linter to lint projects.
+
+[source,yaml]
+----
+############################
+############################
+## Preflight Stack Linter ##
+############################
+############################
+
+#
+# Documentation:
+# https://help.github.com/en/articles/workflow-syntax-for-github-actions
+#
+
+name: Stack Linter
+
+#############################
+# Start the job on all push #
+#############################
+on:
+  pull_request:
+
+###############
+# Set the Job #
+###############
+jobs:
+  build:
+    # Name the Job
+    name: Stack linter
+    # Set the agent to run on
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    ##################
+    # Load all steps #
+    ##################
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          # Full git history is needed to get a proper list of changed files within `super-linter`
+          fetch-depth: 0
+
+      ################################
+      # Run Linter against code base #
+      ################################
+      - name: Lint Code Base
+        uses: docker://ghcr.io/github/super-linter:latest
+        env:
+          ACTIONS_RUNNER_DEBUG: true
+          ERROR_ON_MISSING_EXEC_BIT: true
+          VALIDATE_ALL_CODEBASE: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: main
+----
+
+
+==== Example 5 (Conditionals and manual execution)
+
+[source,yaml]
+----
+name: Equality conditions
+
+on:
+  workflow_dispatch: # Manual execution event
+  push:
+    branches:
+    - master
+    - main
+    - release/pino*
+  #schedule:
+   #- cron: 0-29/10 * * * *
+     #This has a time zone
+   #- cron: 43 9-16/2 * * 1-5 #this is a comment
+   #- cron: "*/15 * * * *"
+   #- cron: "*/5 * * * *"
+env:
+  arg1: 100
+  arg2: 100
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: String equality
+        run: echo Is ok
+        if: ${{ 'aaa' == 'aaa' }} 
+
+      - name: String equality case
+        run: echo Is this case sensitive?
+        if:  ${{ 'aaa' == 'AAA' }}
+
+      - name: String equality never run
+        run: echo This won't run
+        if:  ${{ 'aaa' == 'bbb' }}
+      
+      - name: Numbers and vars
+        run: echo works with vars
+        if:  ${{ env.arg1 == env.arg2 }}    
+
+      - name: Null never run
+        run: echo This won't run
+        if:  ${{ null == 'bbb' }}
+
+      - name: run command only if scheduled
+        run: echo Hello
+        if: ${{ github.event.schedule }}
+----
+
+NOTE: To manually execute the workflow, we have to use the _workflow_dispatch_ event.
+
+==== Example 6 (Example of CI/CD workflow)
+
+IMPORTANT: It is a good idea to use environment for this kind of workflow.
+
+[source,yaml]
+----
+name: CI + CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Compile
+        run: echo "Hello, world!"
+    
+  DeployDev:
+    name: Deploy to Dev 
+    if: github.event_name == 'pull_request'
+    needs: [Build]
+    runs-on: ubuntu-latest
+    environment: # We specify using this tag which environment should run this job
+      name: Development # Name of the enviroment
+      url: 'http://dev.myapp.com' # We can indicate an url to visualize it in the Github environment tool of the repository
+    steps:
+      - name: Deploy
+        run: echo I am deploying! 
+    
+  DeployStaging:
+    name: Deploy to Staging 
+    if: github.event.ref == 'refs/heads/main'
+    needs: [Build]
+    runs-on: ubuntu-latest
+    environment: 
+      name: Staging
+      url: 'http://test.myapp.com'
+    steps:
+      - name: Deploy
+        run: echo I am deploying! 
+            
+  DeployProd:
+    name: Deploy to Production 
+    needs: [DeployStaging]
+    runs-on: ubuntu-latest
+    environment: 
+      name: Production
+      url: 'http://www.myapp.com'
+    steps:
+      - name: Deploy
+        run: echo I am deploying! 
+
+----
+
+=== Environments
+
+* Logical representation of your environments
+* One example could be:
+** Dev-Test-QA-PreProd-Prod
+* Allow to define secrets for each environment
+* Have protection rules
+* It is easier to read deployment logs if the deploy is devided in environment
+
+=== Protection rules
+
+This rules are applied for a environment in order to increase security.
+
+* Required reviewers
+* Wait timer
+* Allowed branches
+
+We can even use third party APIs for cleaning our code, to increase the security...
+
+== Self-Hosted Runners
+
+* We use our own infrastructure
+* We are responsible for the maintenance of the infrastructure and the costs.
+* There are some risks with self-hosted runners
+** Malicious programs can run on the machine
+** They may escape the runner sandbox and then access the machine's network
+** It is possible for unwanted data to persist
+* It is not recommended for public repositories
+* Main use focused on, for example, applications with a high GPU requirements.
+* We can set runner groups
+** At enterprise and/or organization level
+** Scoping to specific organizations and/or repositories
+** We can move runners between groups 
+*** A runner can only be in one group a a time.
+
+== Best practises
+
+* Versioning of the actions and workflows
+* Clear documentation
+* Clarify test coverage
+* If it is possible, post your action or workflow in the markeplace
+* Use environments and protection rules.
+* For self-hosted runners:
+** Create a dedicated user for the Actions runner
+** Enable limited sudo
+** Multiple pools with specific tools
+
+== Troubleshooting tools
+
+If we encounter problems, we may use the link:https://github.com/nektos/act[nektos/act] action.
+
+There is some help too in the workflow editor of GitHub.
+
+Also, there are some useful extensions in the extension marketplace of VSCode Studio.
+
