@@ -4,7 +4,7 @@ toc::[]
 :idseparator: -
 :highlightjs-languages: yaml
 == Github Actions
-If there is any doubt after reading this guide, you can easily find more help link:https://powerman.name/doc/asciidoc[here].
+If there is any doubt after reading this guide, you can easily find more help link:https://github.github.io/actions-cheat-sheet/actions-cheat-sheet.html[here].
 
 The first question we may ask is _Why do we have to learn about Github Actions?_ The answer is quite clear. It is because of its advantages!
 
